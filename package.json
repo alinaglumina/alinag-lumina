@@ -1,0 +1,28 @@
+{
+  "name": "alinag-lumina-platform",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Alinag Lumina \u2014 production e-commerce monorepo (Next.js 15 web + Express/MongoDB API)",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm --workspace apps/api run dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "build": "npm --workspace apps/api run build && npm --workspace apps/web run build",
+    "start:api": "npm --workspace apps/api run start",
+    "start:web": "npm --workspace apps/web run start",
+    "typecheck": "npm --workspace apps/api run typecheck && npm --workspace apps/web run typecheck",
+    "lint": "npm --workspace apps/api run lint && npm --workspace apps/web run lint",
+    "test:unit": "npm --workspace apps/api run test:unit",
+    "test:integration": "npm --workspace apps/api run test:integration",
+    "test:e2e": "npm --workspace apps/web run test:e2e"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
