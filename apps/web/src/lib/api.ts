@@ -1,5 +1,9 @@
 // Server-side fetch wrapper to the Express API. Uses Next's fetch cache/revalidate.
-const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:4000";
+const BASE = process.env.NEXT_PUBLIC_API_BASE;
+
+if (!BASE) {
+  throw new Error("NEXT_PUBLIC_API_BASE is not defined");
+}
 
 export async function apiGet<T>(path: string, opts?: { revalidate?: number; tags?: string[] }): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
