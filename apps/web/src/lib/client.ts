@@ -1,10 +1,21 @@
 "use client";
 // Client-side API calls: attaches the bearer token, or a guest session id for cart/wishlist.
-const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:4000";
+const BASE = process.env.NEXT_PUBLIC_API_BASE;
+if (!BASE) throw new Error("NEXT_PUBLIC_API_BASE is not defined");
 
 export const getToken = () => (typeof window !== "undefined" ? localStorage.getItem("lumina_token") : null);
-export const setToken = (t: string) => localStorage.setItem("lumina_token", t);
-export const clearToken = () => localStorage.removeItem("lumina_token");
+
+// Also mirror the token into a cookie so middleware.ts (server-side) can see it —
+// localStorage is invisible to middleware, which only has access to cookies.
+export const setToken = (t: string) => {
+  localStorage.setItem("lumina_token", t);
+  document.cookie = `access_token=${t}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`;
+};
+export const clearToken = () => {
+  localStorage.removeItem("lumina_token");
+  document.cookie = "access_token=; path=/; max-age=0";
+};
+
 export function sessionId() {
   let s = localStorage.getItem("lumina_sid");
   if (!s) { s = "guest_" + (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)); localStorage.setItem("lumina_sid", s); }
