@@ -1,70 +1,77 @@
-import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-import { getProduct } from "@/services/product.service";
-import { findSample } from "@/lib/sample";
-import { productJsonLd, breadcrumbJsonLd } from "@/lib/seo";
-import { getReviews, type ReviewList } from "@/services/review.service";
-import Reviews from "@/components/Reviews";
+"use client";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/hooks/useAuth";
+import { client } from "@/lib/client";
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 const inr = (n: number) => "₹" + n.toLocaleString("en-IN");
+type Tab = "orders" | "wishlist" | "addresses" | "profile";
 
-async function load(slug: string) {
-  try { const r = await getProduct(slug); if (r.product) return r.product as any; } catch {}
-  return findSample(slug);
-}
+export default function AccountPage() {
+  const { user, loading, logout } = useAuth();
+  const router = useRouter();
+  const [tab, setTab] = useState<Tab>("orders");
+  const [data, setData] = useState<any>({});
 
-// Per-product SEO (title, description, canonical, OG) generated on the server.
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
-  const { slug } = await params;
-  const p = await load(slug);
-  if (!p) return { title: "Product not found" };
-  const title = p.seo?.title ?? p.name;
-  const description = p.seo?.description ?? p.description ?? `Buy ${p.name} at Alinag Lumina.`;
-  return {
-    title, description,
-    alternates: { canonical: `${SITE}/product/${p.slug}` },
-    openGraph: { title, description, url: `${SITE}/product/${p.slug}`, images: p.images ?? [] },
-  };
-}
+  useEffect(() => { if (!loading && !user) router.push("/login"); }, [loading, user, router]);
+  useEffect(() => {
+    if (!user) return;
+    const map: Record<Tab, string> = { orders: "/me/orders", wishlist: "/wishlist", addresses: "/me/addresses", profile: "/me" };
+    client.get(map[tab]).then((d) => setData(d)).catch(() => setData({}));
+  }, [tab, user]);
 
-export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
-  const p = await load(slug);
-  if (!p) notFound();
-
-  let reviewData: ReviewList = { reviews: [], distribution: {}, average: p.ratings?.average ?? 0, count: p.ratings?.count ?? 0 };
-  try { reviewData = await getReviews(p._id); } catch {}
-
-  const jsonLd = [
-    productJsonLd(p),
-    breadcrumbJsonLd([
-      { name: "Home", url: SITE },
-      { name: "Products", url: `${SITE}/products` },
-      { name: p.name, url: `${SITE}/product/${p.slug}` },
-    ]),
-  ];
+  if (loading || !user) return <div className="wrap" style={{ margin: "40px auto" }}>Loading…</div>;
+  const tabs: Tab[] = ["orders", "wishlist", "addresses", "profile"];
 
   return (
     <div className="wrap" style={{ margin: "30px auto" }}>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 34 }}>
-        <div style={{ height: 420, borderRadius: 20, display: "grid", placeItems: "center", fontSize: 130, background: "linear-gradient(135deg,#7c5cff,#b49bff)" }}>{p.glyph ?? "🛍️"}</div>
-        <div>
-          <h1 className="display" style={{ fontSize: 30 }}>{p.name}</h1>
-          <div style={{ margin: "10px 0", color: "var(--ink-soft)" }}>SKU {p.sku ?? "—"} · {p.brand?.name ?? "Alinag Lumina"}</div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12, margin: "16px 0" }}>
-            <span className="display" style={{ fontSize: 30 }}>{inr(p.price)}</span>
-            {p.mrp ? <span style={{ color: "var(--ink-soft)", textDecoration: "line-through" }}>{inr(p.mrp)}</span> : null}
-          </div>
-          <p style={{ color: "var(--ink-soft)", lineHeight: 1.6 }}>{p.description ?? "A beautifully crafted piece from the Alinag Lumina collection."}</p>
-          <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
-            <button className="btn primary" style={{ height: 46, padding: "0 26px" }}>Add to cart</button>
-            <button className="btn" style={{ height: 46, padding: "0 26px" }}>Buy now</button>
-          </div>
-        </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h1 className="sec-title">Hi, {user.name.split(" ")[0]}</h1>
+        <button className="btn" onClick={() => { logout(); router.push("/"); }}>Log out</button>
       </div>
-      <Reviews productId={p._id} initial={reviewData} />
+      <div style={{ display: "flex", gap: 8, margin: "16px 0 22px", flexWrap: "wrap" }}>
+        {tabs.map((t) => <button key={t} className={`btn ${t === tab ? "primary" : ""}`} onClick={() => setTab(t)} style={{ textTransform: "capitalize" }}>{t}</button>)}
+      </div>
+
+      {tab === "orders" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {(data.items ?? []).length === 0 && <p style={{ color: "var(--ink-soft)" }}>No orders yet.</p>}
+          {(data.items ?? []).map((o: any) => (
+            <div key={o._id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <b className="mono">{o.orderNo}</b><span>{inr(o.amounts?.total ?? 0)}</span>
+              </div>
+              <div style={{ color: "var(--ink-soft)", fontSize: 13, marginTop: 6 }}>Status: {o.status} · Payment: {o.payment?.status} · {new Date(o.createdAt).toLocaleDateString("en-IN")}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {tab === "wishlist" && (
+        <div className="grid">
+          {(data.products ?? []).length === 0 && <p style={{ color: "var(--ink-soft)" }}>Your wishlist is empty.</p>}
+          {(data.products ?? []).map((p: any) => (
+            <a key={p._id} href={`/product/${p.slug}`} className="card"><div className="thumb" style={{ background: "linear-gradient(135deg,#7c5cff,#b49bff)" }}>🛍️</div><div className="body"><div className="nm">{p.name}</div><div className="price"><span className="now">{inr(p.price)}</span></div></div></a>
+          ))}
+        </div>
+      )}
+      {tab === "addresses" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {(data.addresses ?? []).length === 0 && <p style={{ color: "var(--ink-soft)" }}>No saved addresses.</p>}
+          {(data.addresses ?? []).map((a: any) => (
+            <div key={a._id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
+              <b>{a.name}</b> {a.isDefault && <span style={{ fontSize: 11, color: "var(--gold)" }}>· Default</span>}
+              <div style={{ color: "var(--ink-soft)", fontSize: 13 }}>{[a.line1, a.city, a.state, a.pincode].filter(Boolean).join(", ")}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {tab === "profile" && data.user && (
+        <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 16, maxWidth: 420 }}>
+          <div><b>Name:</b> {data.user.name}</div>
+          <div style={{ marginTop: 8 }}><b>Email:</b> {data.user.email} {data.user.emailVerified ? "✓" : "· unverified"}</div>
+          <div style={{ marginTop: 8 }}><b>Phone:</b> {data.user.phone ?? "—"}</div>
+        </div>
+      )}
     </div>
   );
 }
