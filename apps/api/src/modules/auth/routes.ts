@@ -1,7 +1,7 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { z } from "zod";
-import { asyncHandler, badRequest } from "../../lib/http.js";
+import { asyncHandler, badRequest, unauthorized } from "../../lib/http.js";
 import { validate } from "../../middleware/validate.js";
 import { requireAuth } from "../../middleware/auth.js";
 import { authLimiter } from "../../middleware/security.js";
@@ -23,22 +23,25 @@ const setAuthCookies = (res: any, at: string, rt: string) => {
   res.cookie("refresh_token", rt, { ...cookieOpts, maxAge: 30 * 24 * 60 * 60_000 });
 };
 
+// Register only creates the account and sends a verification email — no session is issued.
+// The user must verify their email, then log in separately.
 r.post("/register", authLimiter, validate(z.object({ name: z.string().min(2), email: z.string().email(), password: z.string().min(8) })),
   asyncHandler(async (req, res) => {
     const user = await registerUser(req.body.name, req.body.email, req.body.password);
-    // fire verification email (token stored hashed)
     const token = crypto.randomBytes(32).toString("base64url");
     user.verifyTokenHash = hashToken(token); await user.save();
     await enqueueEmail(user.email, "verifyEmail", { link: `${env.WEB_ORIGIN}/verify-email?token=${token}&uid=${user._id}` });
     await enqueueEmail(user.email, "registration", { name: user.name });
-    const s = await issueSession(String(user._id), user.role, device(req));
-    setAuthCookies(res, s.accessToken, s.refreshToken);
-    res.status(201).json({ user: { id: user._id, name: user.name, email: user.email, role: user.role }, ...s });
+    res.status(201).json({
+      message: "Account created. Please check your email to verify your account before signing in.",
+      user: { id: user._id, name: user.name, email: user.email },
+    });
   }));
 
 r.post("/login", authLimiter, validate(z.object({ email: z.string().email(), password: z.string(), code: z.string().optional() })),
   asyncHandler(async (req, res) => {
     const user = await loginUser(req.body.email, req.body.password);
+    if (!user.emailVerified) throw unauthorized("Please verify your email before signing in. Check your inbox for the verification link.");
     if (!checkTwoFactor(user, req.body.code)) return res.json({ twoFactorRequired: true });  // password ok, awaiting TOTP
     const s = await issueSession(String(user._id), user.role, device(req));
     setAuthCookies(res, s.accessToken, s.refreshToken);
