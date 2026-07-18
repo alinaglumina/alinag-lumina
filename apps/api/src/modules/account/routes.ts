@@ -7,24 +7,23 @@ import { User } from "../../models/User.js";
 import { Order } from "../../models/Order.js";
 
 const r = Router();
-r.use(requireAuth);
 
 const clean = "-passwordHash -otp -resetTokenHash -verifyTokenHash -twoFactor.secret -verifyTokenHash";
 
 // Profile
-r.get("/me", asyncHandler(async (req, res) => {
+r.get("/me", requireAuth, asyncHandler(async (req, res) => {
   const user = await User.findById(req.user!.sub).select(clean).lean();
   if (!user) throw notFound("User not found");
   res.json({ user });
 }));
-r.put("/me", validate(z.object({ name: z.string().min(2).optional(), phone: z.string().optional(), avatar: z.string().optional() })),
+r.put("/me", requireAuth, validate(z.object({ name: z.string().min(2).optional(), phone: z.string().optional(), avatar: z.string().optional() })),
   asyncHandler(async (req, res) => {
     const user = await User.findByIdAndUpdate(req.user!.sub, req.body, { new: true }).select(clean);
     res.json({ user });
   }));
 
 // My orders
-r.get("/me/orders", validate(z.object({ page: z.coerce.number().default(1), limit: z.coerce.number().default(10) }), "query"),
+r.get("/me/orders", requireAuth, validate(z.object({ page: z.coerce.number().default(1), limit: z.coerce.number().default(10) }), "query"),
   asyncHandler(async (req, res) => {
     const { page, limit } = req.query as any;
     const [items, total] = await Promise.all([
@@ -34,7 +33,7 @@ r.get("/me/orders", validate(z.object({ page: z.coerce.number().default(1), limi
     ]);
     res.json({ items, total, page, pages: Math.ceil(total / limit) });
   }));
-r.get("/me/orders/:id", asyncHandler(async (req, res) => {
+r.get("/me/orders/:id", requireAuth, asyncHandler(async (req, res) => {
   const order = await Order.findOne({ _id: req.params.id, user: req.user!.sub }).lean();
   if (!order) throw notFound("Order not found");
   res.json({ order });
@@ -46,11 +45,11 @@ const addressSchema = z.object({
   line1: z.string(), line2: z.string().optional(), city: z.string(), state: z.string(),
   pincode: z.string(), country: z.string().default("IN"), isDefault: z.boolean().optional(),
 });
-r.get("/me/addresses", asyncHandler(async (req, res) => {
+r.get("/me/addresses", requireAuth, asyncHandler(async (req, res) => {
   const user = await User.findById(req.user!.sub).select("addresses").lean();
   res.json({ addresses: user?.addresses ?? [] });
 }));
-r.post("/me/addresses", validate(addressSchema), asyncHandler(async (req, res) => {
+r.post("/me/addresses", requireAuth, validate(addressSchema), asyncHandler(async (req, res) => {
   const user = await User.findById(req.user!.sub);
   if (!user) throw notFound("User not found");
   if (req.body.isDefault) user.addresses.forEach((a: any) => (a.isDefault = false));
@@ -58,7 +57,7 @@ r.post("/me/addresses", validate(addressSchema), asyncHandler(async (req, res) =
   await user.save();
   res.status(201).json({ addresses: user.addresses });
 }));
-r.put("/me/addresses/:addrId", validate(addressSchema.partial()), asyncHandler(async (req, res) => {
+r.put("/me/addresses/:addrId", requireAuth, validate(addressSchema.partial()), asyncHandler(async (req, res) => {
   const user = await User.findById(req.user!.sub);
   if (!user) throw notFound("User not found");
   const addr = (user.addresses as any).id(req.params.addrId);
@@ -68,7 +67,7 @@ r.put("/me/addresses/:addrId", validate(addressSchema.partial()), asyncHandler(a
   await user.save();
   res.json({ addresses: user.addresses });
 }));
-r.delete("/me/addresses/:addrId", asyncHandler(async (req, res) => {
+r.delete("/me/addresses/:addrId", requireAuth, asyncHandler(async (req, res) => {
   const user = await User.findById(req.user!.sub);
   if (!user) throw notFound("User not found");
   (user.addresses as any).id(req.params.addrId)?.deleteOne();
